@@ -1,9 +1,9 @@
 # api/translate.py
 import asyncio
-import json
+from flask import Flask, request, jsonify
 from googletrans import Translator
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+
+app = Flask(__name__)
 
 async def translate_async(text, src='auto', dest='en'):
     """Async wrapper for googletrans"""
@@ -15,38 +15,32 @@ async def translate_async(text, src='auto', dest='en'):
     )
     return result.text
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            # Parse URL and query parameters
-            parsed_path = urlparse(self.path)
-            query_params = parse_qs(parsed_path.query)
-            
-            text = query_params.get('text', [''])[0]
-            src = query_params.get('src', ['auto'])[0]
-            dest = query_params.get('dest', ['en'])[0]
-            
-            if not text:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'No text provided'}).encode())
-                return
-            
-            # Run async translation
-            translated_text = asyncio.run(translate_async(text, src, dest))
-            
-            # Return success response
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'text': translated_text}).encode())
-            
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+@app.route('/api/translate', methods=['GET', 'POST'])
+def translate():
+    try:
+        # Get text from query parameter or JSON body
+        if request.method == 'GET':
+            text = request.args.get('text', '')
+            src = request.args.get('src', 'auto')
+            dest = request.args.get('dest', 'en')
+        else:
+            data = request.get_json()
+            text = data.get('text', '')
+            src = data.get('src', 'auto')
+            dest = data.get('dest', 'en')
+        
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        # Run async translation
+        translated_text = asyncio.run(translate_async(text, src, dest))
+        
+        # Return only the translated text
+        return jsonify({'text': translated_text})
     
-    def do_POST(self):
-        self.do_GET()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# For local testing
+if __name__ == '__main__':
+    app.run(debug=True)
